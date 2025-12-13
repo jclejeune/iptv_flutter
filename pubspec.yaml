@@ -1,0 +1,37 @@
+name: mon_iptv
+description: Application IPTV Complète Windows
+publish_to: 'none'
+version: 2.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Réseau & Téléchargement
+  http: ^1.1.0
+  dio: ^5.4.0  # Pour l'enregistrement (plus robuste)
+
+  # Lecteur Vidéo
+  media_kit: ^1.1.10
+  media_kit_video: ^1.2.4
+  media_kit_libs_video: ^1.0.4
+
+  # Utilitaires Système
+  shared_preferences: ^2.2.2 # Pour sauvegarder tes comptes/liens
+  file_picker: ^6.1.1        # Pour choisir le dossier d'enregistrement
+  path_provider: ^2.1.2      # Pour trouver les dossiers par défaut
+  path: ^1.9.0
+  
+  # UI Icons
+  cupertino_icons: ^1.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

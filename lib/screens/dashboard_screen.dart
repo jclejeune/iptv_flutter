@@ -1,7 +1,3 @@
-// ==========================================
-// lib/screens/dashboard_screen.dart
-// ==========================================
-
 import 'dart:async';
 import 'dart:io';
 import 'dart:developer' as developer;
@@ -50,7 +46,7 @@ class _IptvDashboardState extends State<IptvDashboard>
   @override
   void initState() {
     super.initState();
-    _settingsTab = TabController(length: 2, vsync: this);
+    _settingsTab = TabController(length: 2, vsync: this); // ✅ MODIFIÉ : 2 onglets
     
     _player = Player(
       configuration: const PlayerConfiguration(
@@ -62,7 +58,6 @@ class _IptvDashboardState extends State<IptvDashboard>
     if (_player.platform is NativePlayer) {
       final nativePlayer = _player.platform as NativePlayer;
       
-      // Configuration optimisée pour HLS (TF1, etc.)
       nativePlayer.setProperty('hwdec', 'no');
       nativePlayer.setProperty('hls-bitrate', 'max');
       nativePlayer.setProperty('video-sync', 'audio');
@@ -131,10 +126,16 @@ class _IptvDashboardState extends State<IptvDashboard>
     });
   }
 
+  // ✅ MODIFIÉ : Recharger les sources
   Future<void> _loadSources() async {
     final sources = await StorageService.getSources();
-    setState(() => _sources.addAll(sources));
-    if (sources.isNotEmpty) _loadChannels(sources.first);
+    setState(() {
+      _sources.clear();
+      _sources.addAll(sources);
+    });
+    if (sources.isNotEmpty && _currentSource == null) {
+      _loadChannels(sources.first);
+    }
   }
 
   Future<void> _loadChannels(IptvSource source) async {
@@ -289,21 +290,6 @@ class _IptvDashboardState extends State<IptvDashboard>
     }
   }
 
-  Future<void> _addSource(String name, String url, SourceType type, 
-      String user, String pass) async {
-    final source = IptvSource(
-      name: name, 
-      type: type, 
-      url: url, 
-      username: user, 
-      password: pass,
-    );
-    await StorageService.addSource(source);
-    _sources.add(source);
-    setState(() => _selectedTab = 0);
-    developer.log('Source ajoutée: $name', name: 'IPTV');
-  }
-
   void _showSnackbar(String msg, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -423,7 +409,8 @@ class _IptvDashboardState extends State<IptvDashboard>
                 tabController: _settingsTab,
                 hasChannels: _allChannels.isNotEmpty,
                 onExportPlaylist: _exportPlaylist,
-                onAddSource: _addSource,
+                sources: _sources, // ✅ AJOUTÉ
+                onSourcesChanged: _loadSources, // ✅ AJOUTÉ
               ),
       ),
     );

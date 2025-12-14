@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart'; // Moteur Vidéo
-import 'player_screen.dart'; // C'est ici que se trouve ton nouveau Dashboard
-
+import 'screens/dashboard_screen.dart'; // Au lieu de player_screen.dart
 void main() {
   // Initialisation obligatoire du moteur vidéo avant le lancement
   WidgetsFlutterBinding.ensureInitialized();

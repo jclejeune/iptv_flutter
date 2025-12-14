@@ -3,6 +3,7 @@
 // ==========================================
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
@@ -61,50 +62,34 @@ class _IptvDashboardState extends State<IptvDashboard>
     if (_player.platform is NativePlayer) {
       final nativePlayer = _player.platform as NativePlayer;
       
-      // ═══════════════════════════════════════════════════════════════
-      // FIX CRASH CHANGEMENT RÉSOLUTION (AB1, LCI HD, etc.)
-      // ═══════════════════════════════════════════════════════════════
-      
-      // 1. DÉCODAGE CPU UNIQUEMENT (évite corruption GPU)
+      // Configuration optimisée pour HLS (TF1, etc.)
       nativePlayer.setProperty('hwdec', 'no');
-      
-      // 2. FORCER RÉSOLUTION MAX DÈS LE DÉPART
-      //    Empêche le passage 720p → 1080p qui recréé les textures
       nativePlayer.setProperty('hls-bitrate', 'max');
-      
-      // 3. ⭐ FIX PRINCIPAL : Désactiver le redimensionnement dynamique
-      //    Force MPV à garder la même taille de frame interne
       nativePlayer.setProperty('video-sync', 'audio');
       nativePlayer.setProperty('framedrop', 'vo');
-      
-      // 4. ⭐ STABILISER LA SORTIE VIDÉO
-      //    Évite la destruction/recréation de surfaces
-      nativePlayer.setProperty('vo', 'libmpv');
-      nativePlayer.setProperty('gpu-context', 'auto');
-      
-      // 5. BUFFER RÉSEAU AGRESSIF
-      //    Donne du temps au décodeur pour s'adapter
-      nativePlayer.setProperty('demuxer-max-bytes', '150MiB');
-      nativePlayer.setProperty('demuxer-max-back-bytes', '75MiB');
+      nativePlayer.setProperty('vo', 'gpu');
+      nativePlayer.setProperty('gpu-api', 'opengl');
+      nativePlayer.setProperty('gpu-context', 'win');
+      nativePlayer.setProperty('demuxer-max-bytes', '200MiB');
+      nativePlayer.setProperty('demuxer-max-back-bytes', '100MiB');
       nativePlayer.setProperty('cache', 'yes');
-      nativePlayer.setProperty('cache-secs', '30');
-      
-      // 6. RÉSEAU
+      nativePlayer.setProperty('cache-secs', '60');
       nativePlayer.setProperty('user-agent', 
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-      nativePlayer.setProperty('vd-lavc-threads', '0');
-      
-      // 7. ⭐ DERNIER RECOURS : Désactiver le scaling GPU
-      nativePlayer.setProperty('dscale', 'bilinear');
+      nativePlayer.setProperty('http-header-fields', 'Connection: keep-alive');
+      nativePlayer.setProperty('network-timeout', '30');
+      nativePlayer.setProperty('vd-lavc-threads', '4');
       nativePlayer.setProperty('scale', 'bilinear');
+      nativePlayer.setProperty('dscale', 'bilinear');
+      nativePlayer.setProperty('cscale', 'bilinear');
+      nativePlayer.setProperty('audio-buffer', '1.0');
+      nativePlayer.setProperty('video-latency-hacks', 'yes');
     }
     
-    // ⚠️ DÉSACTIVER L'ACCÉLÉRATION MATÉRIELLE DU CONTROLLER
-    // C'est la recréation de texture D3D11 qui crashe
     _controller = VideoController(
       _player,
       configuration: const VideoControllerConfiguration(
-        enableHardwareAcceleration: false, // ← CRITIQUE
+        enableHardwareAcceleration: false,
       ),
     );
     
@@ -115,9 +100,12 @@ class _IptvDashboardState extends State<IptvDashboard>
       _handlePlayerError(error);
     });
     
-    // Log des changements de résolution pour debug
-    _player.stream.width.listen((w) => developer.log('Width: $w', name: 'IPTV.Resolution'));
-    _player.stream.height.listen((h) => developer.log('Height: $h', name: 'IPTV.Resolution'));
+    _player.stream.buffering.listen((buffering) {
+      if (buffering) developer.log('Buffering...', name: 'IPTV.Player');
+    });
+    
+    _player.stream.width.listen((w) => 
+      developer.log('Résolution: ${w}x${_player.state.height}', name: 'IPTV.Player'));
     
     _loadSources();
   }
@@ -137,8 +125,8 @@ class _IptvDashboardState extends State<IptvDashboard>
     _showSnackbar("Erreur: ${_currentChannel?.name}", isError: true);
     
     Future.delayed(const Duration(seconds: 3), () {
-      if (mounted && _currentChannel != null && _lastError != null) {
-         _playChannel(_currentChannel!); 
+      if (mounted && _filteredChannels.length > 1) {
+        _zapChannel(1);
       }
     });
   }
@@ -163,6 +151,7 @@ class _IptvDashboardState extends State<IptvDashboard>
           _filteredChannels = channels;
           _isLoading = false;
         });
+        developer.log('${channels.length} chaînes chargées', name: 'IPTV');
       }
     } catch (e) {
       if (mounted) {
@@ -172,21 +161,44 @@ class _IptvDashboardState extends State<IptvDashboard>
     }
   }
 
-  Future<void> _playChannel(Channel channel) async {
+  Future<void> _playChannel(Channel channel, {int retryCount = 0}) async {
     setState(() {
       _currentChannel = channel;
       _lastError = null;
     });
 
     try {
-      // ⭐ IMPORTANT: Stop complet + petit délai avant nouveau flux
+      developer.log('Lecture: ${channel.name} (tentative ${retryCount + 1}/3)', name: 'IPTV.Play');
+      
       await _player.stop();
-      await Future.delayed(const Duration(milliseconds: 100));
+      await Future.delayed(const Duration(milliseconds: 200));
       await _player.open(Media(channel.url));
+      
+      await _player.stream.playing
+          .firstWhere((playing) => playing)
+          .timeout(const Duration(seconds: 10));
+      
+      developer.log('✓ Lecture démarrée', name: 'IPTV.Play');
+      
     } catch (e) {
+      developer.log('✗ Erreur (tentative ${retryCount + 1})', name: 'IPTV.Error', error: e);
+      
+      if (retryCount < 2 && mounted) {
+        developer.log('Retry dans 2s...', name: 'IPTV.Play');
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted) return _playChannel(channel, retryCount: retryCount + 1);
+      }
+      
       if (mounted) {
         setState(() => _lastError = e.toString());
-        _showSnackbar("Impossible de lire: ${channel.name}", isError: true);
+        _showSnackbar(
+          "Impossible de lire: ${channel.name}\nPassage à la suivante...",
+          isError: true,
+        );
+        
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted && _filteredChannels.length > 1) _zapChannel(1);
+        });
       }
     }
   }
@@ -243,14 +255,38 @@ class _IptvDashboardState extends State<IptvDashboard>
   }
 
   Future<void> _exportPlaylist() async {
-    if (_allChannels.isEmpty) return;
-    final outputFile = await FilePicker.platform.saveFile(
-      dialogTitle: 'Exporter M3U',
-      fileName: '${_currentSource?.name ?? "playlist"}.m3u',
-      allowedExtensions: ['m3u'],
-      type: FileType.custom,
-    );
-    if (outputFile != null) _showSnackbar("Export réussi !");
+    if (_allChannels.isEmpty) {
+      _showSnackbar("Aucune chaîne à exporter", isError: true);
+      return;
+    }
+
+    try {
+      final outputFile = await FilePicker.platform.saveFile(
+        dialogTitle: 'Exporter M3U',
+        fileName: '${_currentSource?.name ?? "playlist"}.m3u',
+        allowedExtensions: ['m3u'],
+        type: FileType.custom,
+      );
+
+      if (outputFile != null) {
+        final buffer = StringBuffer('#EXTM3U\n');
+
+        for (var ch in _allChannels) {
+          buffer.write('#EXTINF:-1');
+          if (ch.logoUrl != null) buffer.write(' tvg-logo="${ch.logoUrl}"');
+          if (ch.group != null) buffer.write(' group-title="${ch.group}"');
+          buffer.write(',${ch.name}\n${ch.url}\n');
+        }
+
+        await File(outputFile).writeAsString(buffer.toString());
+        
+        developer.log('Playlist exportée: $outputFile (${_allChannels.length} chaînes)', name: 'IPTV');
+        _showSnackbar("Export réussi ! ${_allChannels.length} chaînes");
+      }
+    } catch (e) {
+      developer.log('Erreur export', name: 'IPTV.Error', error: e);
+      _showSnackbar("Erreur d'export: $e", isError: true);
+    }
   }
 
   Future<void> _addSource(String name, String url, SourceType type, 
@@ -265,6 +301,7 @@ class _IptvDashboardState extends State<IptvDashboard>
     await StorageService.addSource(source);
     _sources.add(source);
     setState(() => _selectedTab = 0);
+    developer.log('Source ajoutée: $name', name: 'IPTV');
   }
 
   void _showSnackbar(String msg, {bool isError = false}) {
@@ -272,6 +309,7 @@ class _IptvDashboardState extends State<IptvDashboard>
       SnackBar(
         content: Text(msg), 
         backgroundColor: isError ? Colors.red : Colors.green,
+        duration: Duration(seconds: isError ? 5 : 3),
       ),
     );
   }
@@ -317,9 +355,10 @@ class _IptvDashboardState extends State<IptvDashboard>
           children: [
             const Icon(Icons.error_outline, color: Colors.white),
             const SizedBox(width: 15),
-            const Text('Erreur de lecture', 
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            const Spacer(),
+            const Expanded(
+              child: Text('Erreur de lecture\nPassage à la chaîne suivante...', 
+                style: TextStyle(color: Colors.white, fontSize: 12)),
+            ),
             IconButton(
               icon: const Icon(Icons.close, color: Colors.white), 
               onPressed: () => setState(() => _lastError = null),

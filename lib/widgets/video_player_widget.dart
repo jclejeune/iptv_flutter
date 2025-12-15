@@ -1,4 +1,5 @@
 // ==========================================
+// CORRECTION VIDÉO INTÉGRÉE
 // lib/widgets/video_player_widget.dart
 // ==========================================
 
@@ -39,18 +40,24 @@ class VideoPlayerWidget extends StatelessWidget {
       },
       child: Container(
         color: Colors.black,
-        child: Stack(
-          fit: StackFit.expand, // ✅ CORRECTION : Forcer l'expansion complète
-          children: [
-            // ✅ CORRECTION : Vidéo en plein écran sans Center
-            Video(
-              controller: controller,
-              controls: NoVideoControls,
-              fit: BoxFit.contain, // ✅ Garde les proportions
-              fill: Colors.black,
-            ),
-            _buildControls(),
-          ],
+        // ✅ CORRECTION : ClipRect pour forcer le confinement
+        child: ClipRect(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // ✅ CORRECTION : Video avec aspectRatio
+              Center(
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: Video(
+                    controller: controller,
+                    controls: NoVideoControls,
+                  ),
+                ),
+              ),
+              _buildControls(),
+            ],
+          ),
         ),
       ),
     );
@@ -59,7 +66,6 @@ class VideoPlayerWidget extends StatelessWidget {
   Widget _buildControls() {
     return Stack(
       children: [
-        // Zone zapping gauche
         Positioned(
           left: 0,
           top: 100,
@@ -73,7 +79,6 @@ class VideoPlayerWidget extends StatelessWidget {
             ),
           ),
         ),
-        // Zone zapping droite
         Positioned(
           right: 0,
           top: 100,
@@ -87,13 +92,12 @@ class VideoPlayerWidget extends StatelessWidget {
             ),
           ),
         ),
-        // Barre supérieure
         Positioned(
           top: 20,
           right: 20,
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.black38,
+              color: Colors.black54,
               borderRadius: BorderRadius.circular(8),
             ),
             padding: const EdgeInsets.all(8),
@@ -104,31 +108,33 @@ class VideoPlayerWidget extends StatelessWidget {
                   icon: Icon(
                     isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
                     color: Colors.white,
-                    size: 30,
+                    size: 28,
                   ),
-                  tooltip: isFullScreen ? "Quitter Plein écran" : "Plein écran",
+                  tooltip: isFullScreen ? "Quitter" : "Plein écran",
                   onPressed: onToggleFullScreen,
                 ),
                 IconButton(
-                  icon: const Icon(Icons.audiotrack, color: Colors.white),
+                  icon: const Icon(Icons.audiotrack, color: Colors.white, size: 28),
                   tooltip: "Pistes Audio",
                   onPressed: onShowAudioTracks,
                 ),
                 if (currentChannel != null) ...[
                   const SizedBox(width: 10),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+                    constraints: const BoxConstraints(maxWidth: 200),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.blueAccent.withValues(alpha: 0.8),
+                      color: Colors.blueAccent.withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(5),
-                      border: Border.all(color: Colors.white24),
                     ),
                     child: Text(
                       currentChannel!.name,
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
+                        fontSize: 14,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],

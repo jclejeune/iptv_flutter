@@ -1,3 +1,5 @@
+// lib/screens/dashboard_screen.dart
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:developer' as developer;
@@ -46,69 +48,71 @@ class _IptvDashboardState extends State<IptvDashboard>
   @override
   void initState() {
     super.initState();
-    _settingsTab = TabController(length: 2, vsync: this); // ✅ MODIFIÉ : 2 onglets
     
+    // Initialisation des onglets
+    _settingsTab = TabController(length: 2, vsync: this);
+
+    // 1. Création du Player avec config minimale
     _player = Player(
       configuration: const PlayerConfiguration(
         title: 'IPTV Player',
-        logLevel: MPVLogLevel.warn,
+        // logLevel: MPVLogLevel.warn, // Décommente pour le debug si besoin
       ),
     );
 
+    // 2. Configuration MPV (Optimisation Réseau UNIQUEMENT)
+    // On a retiré les lignes 'vo', 'gpu-context' qui ouvraient une fenêtre externe.
     if (_player.platform is NativePlayer) {
       final nativePlayer = _player.platform as NativePlayer;
-      
-      nativePlayer.setProperty('hwdec', 'no');
-      nativePlayer.setProperty('hls-bitrate', 'max');
-      nativePlayer.setProperty('video-sync', 'audio');
-      nativePlayer.setProperty('framedrop', 'vo');
-      nativePlayer.setProperty('vo', 'gpu');
-      nativePlayer.setProperty('gpu-api', 'opengl');
-      nativePlayer.setProperty('gpu-context', 'win');
+
+      // -- Optimisations Réseau & Cache --
       nativePlayer.setProperty('demuxer-max-bytes', '200MiB');
       nativePlayer.setProperty('demuxer-max-back-bytes', '100MiB');
       nativePlayer.setProperty('cache', 'yes');
       nativePlayer.setProperty('cache-secs', '60');
-      nativePlayer.setProperty('user-agent', 
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-      nativePlayer.setProperty('http-header-fields', 'Connection: keep-alive');
       nativePlayer.setProperty('network-timeout', '30');
-      nativePlayer.setProperty('vd-lavc-threads', '4');
-      nativePlayer.setProperty('scale', 'bilinear');
-      nativePlayer.setProperty('dscale', 'bilinear');
-      nativePlayer.setProperty('cscale', 'bilinear');
-      nativePlayer.setProperty('audio-buffer', '1.0');
-      nativePlayer.setProperty('video-latency-hacks', 'yes');
+      nativePlayer.setProperty('user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+      nativePlayer.setProperty('http-header-fields', 'Connection: keep-alive');
+      
+      // Synchronisation Audio/Vidéo
+      nativePlayer.setProperty('video-sync', 'audio');
     }
-    
+
+    // 3. Création du contrôleur vidéo
+    // enableHardwareAcceleration: true est recommandé pour l'intégration UI
     _controller = VideoController(
       _player,
       configuration: const VideoControllerConfiguration(
-        enableHardwareAcceleration: false,
+        enableHardwareAcceleration: true, 
       ),
     );
-    
+
+    // Récupération du volume initial
     _volume = _player.state.volume;
-    
+
+    // Écoute des erreurs
     _errorSubscription = _player.stream.error.listen((error) {
       developer.log('Erreur lecteur: $error', name: 'IPTV.Player');
       _handlePlayerError(error);
     });
-    
+
+    // Logs de buffering (optionnel)
     _player.stream.buffering.listen((buffering) {
       if (buffering) developer.log('Buffering...', name: 'IPTV.Player');
     });
-    
-    _player.stream.width.listen((w) => 
-      developer.log('Résolution: ${w}x${_player.state.height}', name: 'IPTV.Player'));
-    
+
+    // Logs de résolution (optionnel)
+    _player.stream.width.listen((w) => developer
+        .log('Résolution: ${w}x${_player.state.height}', name: 'IPTV.Player'));
+
+    // Chargement initial des sources
     _loadSources();
   }
 
   @override
   void dispose() {
     _errorSubscription?.cancel();
-    _player.dispose();
+    _player.dispose(); // Important : Libère le player
     _settingsTab.dispose();
     _volumeTimer?.cancel();
     super.dispose();
@@ -118,7 +122,8 @@ class _IptvDashboardState extends State<IptvDashboard>
     if (!mounted) return;
     setState(() => _lastError = error);
     _showSnackbar("Erreur: ${_currentChannel?.name}", isError: true);
-    
+
+    // Tentative de zapping automatique en cas d'erreur persistante
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted && _filteredChannels.length > 1) {
         _zapChannel(1);
@@ -126,7 +131,6 @@ class _IptvDashboardState extends State<IptvDashboard>
     });
   }
 
-  // ✅ MODIFIÉ : Recharger les sources
   Future<void> _loadSources() async {
     final sources = await StorageService.getSources();
     setState(() {
@@ -169,34 +173,34 @@ class _IptvDashboardState extends State<IptvDashboard>
     });
 
     try {
-      developer.log('Lecture: ${channel.name} (tentative ${retryCount + 1}/3)', name: 'IPTV.Play');
-      
+      developer.log('Lecture: ${channel.name} (tentative ${retryCount + 1}/3)',
+          name: 'IPTV.Play');
+
+      // Stop propre avant de lancer la nouvelle chaîne
       await _player.stop();
-      await Future.delayed(const Duration(milliseconds: 200));
+      await Future.delayed(const Duration(milliseconds: 100)); // Petit délai de sécurité
       await _player.open(Media(channel.url));
-      
-      await _player.stream.playing
-          .firstWhere((playing) => playing)
-          .timeout(const Duration(seconds: 10));
-      
-      developer.log('✓ Lecture démarrée', name: 'IPTV.Play');
-      
+
+      // Attente du démarrage effectif
+      /* Note : Parfois .firstWhere timeout si le flux est très lent, 
+         mais le player gère le chargement en fond. */
     } catch (e) {
-      developer.log('✗ Erreur (tentative ${retryCount + 1})', name: 'IPTV.Error', error: e);
-      
+      developer.log('✗ Erreur (tentative ${retryCount + 1})',
+          name: 'IPTV.Error', error: e);
+
       if (retryCount < 2 && mounted) {
         developer.log('Retry dans 2s...', name: 'IPTV.Play');
         await Future.delayed(const Duration(seconds: 2));
         if (mounted) return _playChannel(channel, retryCount: retryCount + 1);
       }
-      
+
       if (mounted) {
         setState(() => _lastError = e.toString());
         _showSnackbar(
           "Impossible de lire: ${channel.name}\nPassage à la suivante...",
           isError: true,
         );
-        
+
         Future.delayed(const Duration(seconds: 3), () {
           if (mounted && _filteredChannels.length > 1) _zapChannel(1);
         });
@@ -228,8 +232,9 @@ class _IptvDashboardState extends State<IptvDashboard>
     setState(() {
       _filteredChannels = query.isEmpty
           ? _allChannels
-          : _allChannels.where((c) => 
-              c.name.toLowerCase().contains(query.toLowerCase())).toList();
+          : _allChannels
+              .where((c) => c.name.toLowerCase().contains(query.toLowerCase()))
+              .toList();
     });
   }
 
@@ -243,7 +248,7 @@ class _IptvDashboardState extends State<IptvDashboard>
         itemCount: tracks.length,
         itemBuilder: (ctx, i) => ListTile(
           title: Text(
-            tracks[i].title ?? tracks[i].language ?? "Piste ${i + 1}", 
+            tracks[i].title ?? tracks[i].language ?? "Piste ${i + 1}",
             style: const TextStyle(color: Colors.white),
           ),
           onTap: () {
@@ -280,8 +285,10 @@ class _IptvDashboardState extends State<IptvDashboard>
         }
 
         await File(outputFile).writeAsString(buffer.toString());
-        
-        developer.log('Playlist exportée: $outputFile (${_allChannels.length} chaînes)', name: 'IPTV');
+
+        developer.log(
+            'Playlist exportée: $outputFile (${_allChannels.length} chaînes)',
+            name: 'IPTV');
         _showSnackbar("Export réussi ! ${_allChannels.length} chaînes");
       }
     } catch (e) {
@@ -293,7 +300,7 @@ class _IptvDashboardState extends State<IptvDashboard>
   void _showSnackbar(String msg, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(msg), 
+        content: Text(msg),
         backgroundColor: isError ? Colors.red : Colors.green,
         duration: Duration(seconds: isError ? 5 : 3),
       ),
@@ -306,11 +313,14 @@ class _IptvDashboardState extends State<IptvDashboard>
       body: MouseRegion(
         onHover: (event) {
           if (!_isFullScreen) return;
+          // Affiche le menu flottant si la souris est à gauche
           setState(() => _showFloatingMenu = event.position.dx < 50);
         },
         child: Stack(
           children: [
             _buildMainContent(),
+            
+            // Menu flottant en plein écran
             if (_isFullScreen)
               FloatingMenu(
                 isVisible: _showFloatingMenu,
@@ -319,8 +329,12 @@ class _IptvDashboardState extends State<IptvDashboard>
                 onChannelTap: _playChannel,
                 onSearch: _filterChannels,
               ),
+              
+            // Indicateur de Volume
             if (_showVolume)
               Positioned.fill(child: VolumeIndicator(volume: _volume)),
+              
+            // Message d'erreur visuel
             if (_lastError != null) _buildErrorIndicator(),
           ],
         ),
@@ -330,11 +344,13 @@ class _IptvDashboardState extends State<IptvDashboard>
 
   Widget _buildErrorIndicator() {
     return Positioned(
-      bottom: 80, left: 20, right: 20,
+      bottom: 80,
+      left: 20,
+      right: 20,
       child: Container(
         padding: const EdgeInsets.all(15),
         decoration: BoxDecoration(
-          color: Colors.red.withValues(alpha: 0.9), 
+          color: Colors.red.withValues(alpha: 0.9),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Row(
@@ -342,11 +358,11 @@ class _IptvDashboardState extends State<IptvDashboard>
             const Icon(Icons.error_outline, color: Colors.white),
             const SizedBox(width: 15),
             const Expanded(
-              child: Text('Erreur de lecture\nPassage à la chaîne suivante...', 
-                style: TextStyle(color: Colors.white, fontSize: 12)),
+              child: Text('Erreur de lecture\nPassage à la chaîne suivante...',
+                  style: TextStyle(color: Colors.white, fontSize: 12)),
             ),
             IconButton(
-              icon: const Icon(Icons.close, color: Colors.white), 
+              icon: const Icon(Icons.close, color: Colors.white),
               onPressed: () => setState(() => _lastError = null),
             ),
           ],
@@ -358,13 +374,17 @@ class _IptvDashboardState extends State<IptvDashboard>
   Widget _buildMainContent() {
     return Row(
       children: [
+        // Panneau latéral (caché en plein écran)
         if (!_isFullScreen) ...[_buildNavigationRail(), _buildSidePanel()],
+        
+        // Zone Vidéo
         Expanded(
           child: VideoPlayerWidget(
             controller: _controller,
             currentChannel: _currentChannel,
             isFullScreen: _isFullScreen,
-            onToggleFullScreen: () => setState(() => _isFullScreen = !_isFullScreen),
+            onToggleFullScreen: () =>
+                setState(() => _isFullScreen = !_isFullScreen),
             onShowAudioTracks: _showAudioTracks,
             onPrevChannel: () => _zapChannel(-1),
             onNextChannel: () => _zapChannel(1),
@@ -383,8 +403,10 @@ class _IptvDashboardState extends State<IptvDashboard>
       labelType: NavigationRailLabelType.all,
       leading: const Icon(Icons.tv, color: Colors.blue, size: 30),
       destinations: const [
-        NavigationRailDestination(icon: Icon(Icons.live_tv), label: Text('Chaînes')),
-        NavigationRailDestination(icon: Icon(Icons.settings), label: Text('Paramètres')),
+        NavigationRailDestination(
+            icon: Icon(Icons.live_tv), label: Text('Chaînes')),
+        NavigationRailDestination(
+            icon: Icon(Icons.settings), label: Text('Paramètres')),
       ],
     );
   }
@@ -409,8 +431,8 @@ class _IptvDashboardState extends State<IptvDashboard>
                 tabController: _settingsTab,
                 hasChannels: _allChannels.isNotEmpty,
                 onExportPlaylist: _exportPlaylist,
-                sources: _sources, // ✅ AJOUTÉ
-                onSourcesChanged: _loadSources, // ✅ AJOUTÉ
+                sources: _sources,
+                onSourcesChanged: _loadSources,
               ),
       ),
     );

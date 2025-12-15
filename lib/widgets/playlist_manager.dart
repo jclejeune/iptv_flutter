@@ -1,7 +1,4 @@
-// ==========================================
-// 2. NOUVEAU WIDGET : CRUD PLAYLISTS
-// lib/widgets/playlist_manager.dart (NOUVEAU FICHIER)
-// ==========================================
+// lib/widgets/playlist_manager.dart
 
 import 'package:flutter/material.dart';
 import '../models.dart';
@@ -46,19 +43,28 @@ class _PlaylistManagerState extends State<PlaylistManager> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                DropdownButtonFormField<SourceType>(
-                  value: selectedType,
+                // ✅ CORRECTION 1 : Remplacement par InputDecorator + DropdownButton
+                // pour éviter l'erreur de dépréciation de 'value' sur FormField
+                InputDecorator(
                   decoration: const InputDecoration(
                     labelText: 'Type',
                     prefixIcon: Icon(Icons.category),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    border: OutlineInputBorder(), // Garde le même style que TextField
                   ),
-                  items: const [
-                    DropdownMenuItem(value: SourceType.m3u, child: Text('M3U')),
-                    DropdownMenuItem(value: SourceType.xtream, child: Text('Xtream')),
-                  ],
-                  onChanged: (type) {
-                    setDialogState(() => selectedType = type!);
-                  },
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<SourceType>(
+                      value: selectedType,
+                      isDense: true,
+                      items: const [
+                        DropdownMenuItem(value: SourceType.m3u, child: Text('M3U')),
+                        DropdownMenuItem(value: SourceType.xtream, child: Text('Xtream')),
+                      ],
+                      onChanged: (type) {
+                        setDialogState(() => selectedType = type!);
+                      },
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
@@ -105,9 +111,16 @@ class _PlaylistManagerState extends State<PlaylistManager> {
                     username: userCtrl.text,
                     password: passCtrl.text,
                   );
+                  
+                  // ✅ CORRECTION 2 : Gestion sécurisée du contexte asynchrone
+                  // On capture le navigator avant le await si nécessaire, 
+                  // ou on vérifie context.mounted après.
                   await StorageService.addSource(source);
                   widget.onSourcesChanged();
-                  if (mounted) Navigator.pop(context);
+                  
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                  }
                 }
               },
               child: const Text('Ajouter'),
@@ -142,19 +155,27 @@ class _PlaylistManagerState extends State<PlaylistManager> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                DropdownButtonFormField<SourceType>(
-                  value: selectedType,
+                // ✅ CORRECTION 1 (bis) : InputDecorator pour l'édition aussi
+                InputDecorator(
                   decoration: const InputDecoration(
                     labelText: 'Type',
                     prefixIcon: Icon(Icons.category),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    border: OutlineInputBorder(),
                   ),
-                  items: const [
-                    DropdownMenuItem(value: SourceType.m3u, child: Text('M3U')),
-                    DropdownMenuItem(value: SourceType.xtream, child: Text('Xtream')),
-                  ],
-                  onChanged: (type) {
-                    setDialogState(() => selectedType = type!);
-                  },
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<SourceType>(
+                      value: selectedType,
+                      isDense: true,
+                      items: const [
+                        DropdownMenuItem(value: SourceType.m3u, child: Text('M3U')),
+                        DropdownMenuItem(value: SourceType.xtream, child: Text('Xtream')),
+                      ],
+                      onChanged: (type) {
+                        setDialogState(() => selectedType = type!);
+                      },
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
@@ -201,9 +222,14 @@ class _PlaylistManagerState extends State<PlaylistManager> {
                     username: userCtrl.text,
                     password: passCtrl.text,
                   );
+
+                  // ✅ CORRECTION 2 (bis) : Gestion sécurisée du contexte
                   await StorageService.updateSource(index, updatedSource);
                   widget.onSourcesChanged();
-                  if (mounted) Navigator.pop(context);
+                  
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                  }
                 }
               },
               child: const Text('Enregistrer'),
@@ -228,9 +254,13 @@ class _PlaylistManagerState extends State<PlaylistManager> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () async {
+              // ✅ CORRECTION 2 (ter) : Gestion sécurisée du contexte
               await StorageService.removeSource(index);
               widget.onSourcesChanged();
-              if (mounted) Navigator.pop(context);
+              
+              if (context.mounted) {
+                Navigator.pop(context);
+              }
             },
             child: const Text('Supprimer'),
           ),

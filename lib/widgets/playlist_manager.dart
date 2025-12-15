@@ -19,6 +19,8 @@ class PlaylistManager extends StatefulWidget {
 }
 
 class _PlaylistManagerState extends State<PlaylistManager> {
+  
+  // --- DIALOGUE D'AJOUT ---
   void _showAddDialog() {
     final nameCtrl = TextEditingController();
     final urlCtrl = TextEditingController();
@@ -43,14 +45,12 @@ class _PlaylistManagerState extends State<PlaylistManager> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                // ✅ CORRECTION 1 : Remplacement par InputDecorator + DropdownButton
-                // pour éviter l'erreur de dépréciation de 'value' sur FormField
                 InputDecorator(
                   decoration: const InputDecoration(
                     labelText: 'Type',
                     prefixIcon: Icon(Icons.category),
                     contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    border: OutlineInputBorder(), // Garde le même style que TextField
+                    border: OutlineInputBorder(),
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<SourceType>(
@@ -61,7 +61,9 @@ class _PlaylistManagerState extends State<PlaylistManager> {
                         DropdownMenuItem(value: SourceType.xtream, child: Text('Xtream')),
                       ],
                       onChanged: (type) {
-                        setDialogState(() => selectedType = type!);
+                        if (type != null) {
+                          setDialogState(() => selectedType = type);
+                        }
                       },
                     ),
                   ),
@@ -112,12 +114,11 @@ class _PlaylistManagerState extends State<PlaylistManager> {
                     password: passCtrl.text,
                   );
                   
-                  // ✅ CORRECTION 2 : Gestion sécurisée du contexte asynchrone
-                  // On capture le navigator avant le await si nécessaire, 
-                  // ou on vérifie context.mounted après.
+                  // Opération asynchrone
                   await StorageService.addSource(source);
                   widget.onSourcesChanged();
                   
+                  // ✅ CORRECTION OBLIGATOIRE : Vérifier si le widget est encore là
                   if (context.mounted) {
                     Navigator.pop(context);
                   }
@@ -131,6 +132,7 @@ class _PlaylistManagerState extends State<PlaylistManager> {
     );
   }
 
+  // --- DIALOGUE DE MODIFICATION ---
   void _showEditDialog(int index, IptvSource source) {
     final nameCtrl = TextEditingController(text: source.name);
     final urlCtrl = TextEditingController(text: source.url);
@@ -155,7 +157,6 @@ class _PlaylistManagerState extends State<PlaylistManager> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                // ✅ CORRECTION 1 (bis) : InputDecorator pour l'édition aussi
                 InputDecorator(
                   decoration: const InputDecoration(
                     labelText: 'Type',
@@ -172,7 +173,9 @@ class _PlaylistManagerState extends State<PlaylistManager> {
                         DropdownMenuItem(value: SourceType.xtream, child: Text('Xtream')),
                       ],
                       onChanged: (type) {
-                        setDialogState(() => selectedType = type!);
+                        if (type != null) {
+                          setDialogState(() => selectedType = type);
+                        }
                       },
                     ),
                   ),
@@ -223,10 +226,11 @@ class _PlaylistManagerState extends State<PlaylistManager> {
                     password: passCtrl.text,
                   );
 
-                  // ✅ CORRECTION 2 (bis) : Gestion sécurisée du contexte
+                  // Opération asynchrone
                   await StorageService.updateSource(index, updatedSource);
                   widget.onSourcesChanged();
                   
+                  // ✅ CORRECTION OBLIGATOIRE
                   if (context.mounted) {
                     Navigator.pop(context);
                   }
@@ -240,6 +244,7 @@ class _PlaylistManagerState extends State<PlaylistManager> {
     );
   }
 
+  // --- DIALOGUE DE SUPPRESSION ---
   void _confirmDelete(int index, String name) {
     showDialog(
       context: context,
@@ -248,18 +253,19 @@ class _PlaylistManagerState extends State<PlaylistManager> {
         content: Text('Voulez-vous vraiment supprimer "$name" ?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('Annuler'),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () async {
-              // ✅ CORRECTION 2 (ter) : Gestion sécurisée du contexte
+              // Opération asynchrone
               await StorageService.removeSource(index);
               widget.onSourcesChanged();
               
-              if (context.mounted) {
-                Navigator.pop(context);
+              // ✅ CORRECTION : Utiliser ctx (le context du dialog) au lieu de context
+              if (ctx.mounted) {
+                Navigator.pop(ctx);
               }
             },
             child: const Text('Supprimer'),

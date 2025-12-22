@@ -1,5 +1,3 @@
-// lib/screens/dashboard_screen.dart
-
 import 'dart:async';
 import 'dart:io';
 import 'dart:developer' as developer;
@@ -44,6 +42,12 @@ class _IptvDashboardState extends State<IptvDashboard>
   late final TabController _settingsTab;
   Timer? _volumeTimer;
   StreamSubscription? _errorSubscription;
+
+  // Variables pour le redimensionnement de la sidebar
+  double _sidebarWidth = 320.0;
+  final double _minSidebarWidth = 240.0; // Largeur minimale autorisée
+  final double _maxSidebarWidth = 500.0; // Largeur maximale autorisée
+  bool _isResizing = false;
 
   @override
   void initState() {
@@ -103,10 +107,11 @@ class _IptvDashboardState extends State<IptvDashboard>
 
     // Logs de résolution (optionnel)
     _player.stream.width.listen((w) => developer
-        .log('Résolution: ${w}x${_player.state.height}', name: 'IPTV.Player'));
+        .log('Résolution: (${w}x${_player.state.height})', name: 'IPTV.Player'));
 
-    // Chargement initial des sources
+    // Chargement initial des sources et de la largeur sauvegardée de la sidebar
     _loadSources();
+    _loadSavedSidebarWidth();
   }
 
   @override
@@ -116,6 +121,16 @@ class _IptvDashboardState extends State<IptvDashboard>
     _settingsTab.dispose();
     _volumeTimer?.cancel();
     super.dispose();
+  }
+
+  // Charger la largeur de la sidebar sauvegardée dans le stockage
+  Future<void> _loadSavedSidebarWidth() async {
+    final savedWidth = await StorageService.getDouble('sidebar_width');
+    if (savedWidth != null) {
+      setState(() {
+        _sidebarWidth = savedWidth.clamp(_minSidebarWidth, _maxSidebarWidth);
+      });
+    }
   }
 
   void _handlePlayerError(String error) {
@@ -307,6 +322,39 @@ class _IptvDashboardState extends State<IptvDashboard>
     );
   }
 
+  // Widget de poignée de redimensionnement de la sidebar
+  Widget _buildResizeHandle() {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      child: GestureDetector(
+        onHorizontalDragStart: (details) => setState(() => _isResizing = true),
+        onHorizontalDragUpdate: (details) {
+          if (_isResizing) {
+            final newWidth = _sidebarWidth + details.delta.dx;
+            setState(() {
+              _sidebarWidth = newWidth.clamp(_minSidebarWidth, _maxSidebarWidth);
+            });
+          }
+        },
+        onHorizontalDragEnd: (_) async {
+          setState(() => _isResizing = false);
+          // Sauvegarder la largeur actuelle dans le stockage
+          await StorageService.saveDouble('sidebar_width', _sidebarWidth);
+        },
+        child: Container(
+          width: 8,
+          color: _isResizing ? Colors.blueAccent.withValues(alpha: 0.7) : Colors.transparent,
+          child: Center(
+            child: Container(
+              width: 2,
+              color: Colors.grey.withValues(alpha: 0.5),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -375,7 +423,12 @@ class _IptvDashboardState extends State<IptvDashboard>
     return Row(
       children: [
         // Panneau latéral (caché en plein écran)
-        if (!_isFullScreen) ...[_buildNavigationRail(), _buildSidePanel()],
+        if (!_isFullScreen) ...[
+          _buildNavigationRail(),
+          _buildSidePanel(),
+          // Poignée de redimensionnement
+          _buildResizeHandle(),
+        ],
         
         // Zone Vidéo
         Expanded(
@@ -413,7 +466,7 @@ class _IptvDashboardState extends State<IptvDashboard>
 
   Widget _buildSidePanel() {
     return SizedBox(
-      width: 320,
+      width: _sidebarWidth,
       child: Container(
         color: const Color(0xFF252525),
         child: _selectedTab == 0

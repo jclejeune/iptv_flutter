@@ -159,6 +159,16 @@ class StorageService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyRecordPath, path);
   }
+
+  static Future<double?> getDouble(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getDouble(key);
+  }
+
+  static Future<void> saveDouble(String key, double value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(key, value);
+  }
 }
 
 // === RECORDER SERVICE ===
